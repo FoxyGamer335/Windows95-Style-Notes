@@ -51,22 +51,28 @@
             will-change: transform;
         }
 
-        #create-btn {
+        #buttons {
             position: fixed;
             top: 15px;
             left: 15px;
             z-index: 9999;
-            padding: 10px 20px;
-            background-color: #333;
-            color: white;
-            border: 2px outset #444;
-            cursor: pointer;
             font-family: sans-serif;
             font-weight: bold;
+
+
+        }
+
+        #buttons button {
+            margin-right: 10px;
+
+            color: white;
+            padding: 10px 20px;
+            background-color: #333;
+            border: 2px outset #444;
             box-shadow: 5px 5px 1px rgba(0, 0, 0, 0.5);
         }
 
-        #create-btn:active {
+        #buttons button:active {
             border-style: inset;
             transform: translate(2px, 2px);
             box-shadow: 3px 3px 1px rgba(0, 0, 0, 0.5);
@@ -183,11 +189,71 @@
         ul {
             padding: 0px 20px;
         }
+
+        #settings-modal {
+            position: fixed;
+            inset: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        }
+
+        #settings-modal.is-open {
+            display: flex;
+        }
+
+        .settings-window {
+            width: min(420px, calc(100vw - 32px));
+            min-width: 0;
+            min-height: 0;
+            height: auto;
+        }
+
+        .settings-window .content {
+            gap: 10px;
+        }
+
+        .settings-window .content button {
+            width: 100%;
+            text-align: left;
+        }
+
+        .close-settings-btn {
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            line-height: 16px;
+            font-size: 18px;
+        }
+
+        .settings-description {
+            color: #ddd;
+            margin-bottom: 4px;
+        }
     </style>
 </head>
 
 <body>
-    <button id="create-btn">Создать окно</button>
+    <div id="settings-modal" class="modal">
+        <div class="draggable settings-window">
+            <h4 class="dragger">
+                <span>Настройки.exe</span>
+                <button id="close-settings-btn" class="close-settings-btn" title="Закрыть">&times;</button>
+            </h4>
+            <div class="content">
+                <p class="settings-description">Состояние заметок хранится локально в IndexedDB.</p>
+                <button id="import-json-btn">Импортировать JSON</button>
+                <button id="export-json-btn">Экспортировать JSON</button>
+                <input id="import-json-input" type="file" accept="application/json,.json" hidden>
+            </div>
+        </div>
+    </div>
+    <div id="buttons">
+        <button id="create-btn">Создать окно</button>
+        <button id="settings-btn">Настройки</button>
+    </div>
     <div id="viewport">
         <div id="canvas"></div>
     </div>
@@ -197,7 +263,17 @@
         const viewport = document.getElementById('viewport');
         const canvas = document.getElementById('canvas');
         const createBtn = document.getElementById('create-btn');
+        const settingsBtn = document.getElementById('settings-btn');
+        const settingsModal = document.getElementById('settings-modal');
+        const closeSettingsBtn = document.getElementById('close-settings-btn');
+        const importJsonBtn = document.getElementById('import-json-btn');
+        const exportJsonBtn = document.getElementById('export-json-btn');
+        const importJsonInput = document.getElementById('import-json-input');
 
+        const DB_NAME = 'windows95-notes';
+        const DB_VERSION = 1;
+        const STATE_STORE = 'state';
+        const STATE_KEY = 'workspace';
         let domWindows = [];
         let windowsState = {};
         let canvasX = 0, canvasY = 0, canvasScale = 1;
@@ -208,12 +284,45 @@
         window.activeEditors = {};
         const roundGrid = value => Math.round(value / GRID_SIZE) * GRID_SIZE;
 
-        function scheduleSave() {
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(saveToServer, 500);
+        function openDatabase() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = () => {
+                    request.result.createObjectStore(STATE_STORE);
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
         }
 
-        async function saveToServer() {
+        async function writeState(state) {
+            const database = await openDatabase();
+            return new Promise((resolve, reject) => {
+                const transaction = database.transaction(STATE_STORE, 'readwrite');
+                transaction.objectStore(STATE_STORE).put(state, STATE_KEY);
+                transaction.oncomplete = () => {
+                    database.close();
+                    resolve();
+                };
+                transaction.onerror = () => {
+                    database.close();
+                    reject(transaction.error);
+                };
+            });
+        }
+
+        async function readState() {
+            const database = await openDatabase();
+            return new Promise((resolve, reject) => {
+                const transaction = database.transaction(STATE_STORE, 'readonly');
+                const request = transaction.objectStore(STATE_STORE).get(STATE_KEY);
+                request.onsuccess = () => resolve(request.result || null);
+                request.onerror = () => reject(request.error);
+                transaction.oncomplete = () => database.close();
+            });
+        }
+
+        function collectState() {
             const state = { camera: { x: canvasX, y: canvasY, scale: canvasScale }, windows: {} };
 
             domWindows.forEach(win => {
@@ -230,12 +339,84 @@
                 };
             });
 
-            await fetch('/api/state', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(state)
-            });
+            return state;
         }
+
+        function scheduleSave() {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(saveToIndexedDB, 500);
+        }
+
+        async function saveToIndexedDB() {
+            try {
+                await writeState(collectState());
+            } catch (error) {
+                console.error('Не удалось сохранить состояние в IndexedDB:', error);
+            }
+        }
+
+        function applyState(state) {
+            if (!state || !state.camera || typeof state.windows !== 'object') {
+                throw new Error('Некорректный формат состояния');
+            }
+
+            Object.keys(window.activeEditors).forEach(cleanupEditor);
+            domWindows.forEach(win => resizeObserver.unobserve(win));
+            canvas.replaceChildren();
+            domWindows = [];
+            windowsState = state.windows || {};
+            canvasX = Number(state.camera.x) || 0;
+            canvasY = Number(state.camera.y) || 0;
+            canvasScale = Math.max(0.1, Math.min(Number(state.camera.scale) || 1, 5));
+
+            Object.keys(windowsState)
+                .sort((a, b) => (windowsState[a].zIndex || 0) - (windowsState[b].zIndex || 0))
+                .forEach(id => createWindowDOM(id, windowsState[id]));
+
+            updateCanvas();
+        }
+
+        function closeSettings() {
+            settingsModal.classList.remove('is-open');
+        }
+
+        settingsBtn.addEventListener('click', () => {
+            settingsModal.classList.add('is-open');
+        });
+
+        closeSettingsBtn.addEventListener('click', closeSettings);
+        settingsModal.addEventListener('click', event => {
+            if (event.target === settingsModal) closeSettings();
+        });
+
+        exportJsonBtn.addEventListener('click', async () => {
+            const state = collectState();
+            await writeState(state);
+            const blob = new Blob([JSON.stringify(state, null, 4)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'windows95-notes.json';
+            link.click();
+            URL.revokeObjectURL(url);
+        });
+
+        importJsonBtn.addEventListener('click', () => importJsonInput.click());
+        importJsonInput.addEventListener('change', async () => {
+            const file = importJsonInput.files[0];
+            importJsonInput.value = '';
+            if (!file) return;
+
+            try {
+                const importedState = JSON.parse(await file.text());
+                applyState(importedState);
+                await writeState(collectState());
+                closeSettings();
+            } catch (error) {
+                console.error('Не удалось импортировать JSON:', error);
+                alert('Не удалось импортировать JSON: проверьте формат файла.');
+            }
+        });
 
         function createWindowDOM(id, data) {
             const win = document.createElement('div');
@@ -351,14 +532,14 @@
             delete window.activeEditors[id];
         }
 
-function renderWindowContent(id) {
-    const win = document.getElementById(id);
-    if (!win) return;
+        function renderWindowContent(id) {
+            const win = document.getElementById(id);
+            if (!win) return;
 
-    const data = windowsState[id];
-    win.querySelector('.title-text').textContent = `${data.title}.exe`;
+            const data = windowsState[id];
+            win.querySelector('.title-text').textContent = `${data.title}.exe`;
 
-    let htmlContent = data.content.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (match, innerCSS) => `
+            let htmlContent = data.content.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (match, innerCSS) => `
         <style>
             @scope (#${id}) {
                 ${innerCSS}
@@ -366,29 +547,29 @@ function renderWindowContent(id) {
         </style>
     `);
 
-    const scriptsToRun = [];
-    htmlContent = htmlContent.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (match, innerJS) => {
-        scriptsToRun.push(innerJS);
-        return '';
-    });
+            const scriptsToRun = [];
+            htmlContent = htmlContent.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (match, innerJS) => {
+                scriptsToRun.push(innerJS);
+                return '';
+            });
 
-    const contentContainer = win.querySelector('.content');
-    contentContainer.innerHTML = htmlContent;
+            const contentContainer = win.querySelector('.content');
+            contentContainer.innerHTML = htmlContent;
 
-    scriptsToRun.forEach(scriptText => {
-        const scriptEl = document.createElement('script');
+            scriptsToRun.forEach(scriptText => {
+                const scriptEl = document.createElement('script');
 
-        let loopCounter = 0;
-        const safeScriptText = scriptText.replace(
-            /(for\s*\([\s\S]*?\)\s*\{|while\s*\([\s\S]*?\)\s*\{|do\s*\{)/g,
-            (match) => {
-                loopCounter++;
-                const loopId = loopCounter;
-                return `__startLoop(${loopId}); ${match} if (__checkLoop(${loopId})) break; `;
-            }
-        );
+                let loopCounter = 0;
+                const safeScriptText = scriptText.replace(
+                    /(for\s*\([\s\S]*?\)\s*\{|while\s*\([\s\S]*?\)\s*\{|do\s*\{)/g,
+                    (match) => {
+                        loopCounter++;
+                        const loopId = loopCounter;
+                        return `__startLoop(${loopId}); ${match} if (__checkLoop(${loopId})) break; `;
+                    }
+                );
 
-        scriptEl.textContent = `
+                scriptEl.textContent = `
             (function(windowElement, windowId) {
                 const __loopStarts = {};
 
@@ -433,9 +614,9 @@ function renderWindowContent(id) {
                 }
             })(document.getElementById('${id}'), '${id}');
         `;
-        contentContainer.appendChild(scriptEl);
-    });
-}
+                contentContainer.appendChild(scriptEl);
+            });
+        }
 
         const resizeObserver = new ResizeObserver(entries => {
             entries.forEach(entry => {
@@ -580,20 +761,10 @@ function renderWindowContent(id) {
 
         async function initApp() {
             try {
-                const response = await fetch('/api/state');
-                if (!response.ok) throw new Error('No state found');
-
-                const state = await response.json();
-                canvasX = state.camera.x;
-                canvasY = state.camera.y;
-                canvasScale = state.camera.scale;
-                windowsState = state.windows || {};
-
-                Object.keys(windowsState)
-                    .sort((a, b) => (windowsState[a].zIndex || 0) - (windowsState[b].zIndex || 0))
-                    .forEach(id => createWindowDOM(id, windowsState[id]));
+                const state = await readState();
+                if (state) applyState(state);
             } catch (error) {
-                console.log('Starting fresh session.');
+                console.error('Не удалось загрузить состояние из IndexedDB:', error);
             }
 
             updateCanvas();
