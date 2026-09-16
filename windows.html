@@ -379,13 +379,11 @@ function renderWindowContent(id) {
         const scriptEl = document.createElement('script');
 
         let loopCounter = 0;
-        // Корректный перехват for, while и do-while без поломки скобок
         const safeScriptText = scriptText.replace(
             /(for\s*\([\s\S]*?\)\s*\{|while\s*\([\s\S]*?\)\s*\{|do\s*\{)/g,
             (match) => {
                 loopCounter++;
                 const loopId = loopCounter;
-                // При входе в цикл сбрасываем время старта, внутри проверяем лимит
                 return `__startLoop(${loopId}); ${match} if (__checkLoop(${loopId})) break; `;
             }
         );

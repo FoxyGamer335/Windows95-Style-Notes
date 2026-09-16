@@ -13,7 +13,6 @@ def index():
 
 @app.route('/files/<path:filename>')
 def serve_files(filename):
-    # Абсолютный путь к вашей рабочей директории
     base_dir = '/home/foxygamer/Документы/VSCode/'
     return send_from_directory(base_dir, filename)
 
@@ -33,11 +32,9 @@ def handle_state():
             return jsonify({"error": "No state saved yet"}), 404
 
 def open_browser():
-    # Используем open_new_tab вместо open_new
     webbrowser.open_new_tab("http://127.0.0.1:5000/")
 
 if __name__ == '__main__':
-    # Запускаем таймер, который вызовет open_browser через 1 секунду
     Timer(1.0, open_browser).start()
     
     app.run(debug=True, port=5000, use_reloader=False)
