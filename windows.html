@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Windows</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.36.2/ace.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.36.2/ext-language_tools.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #005b5b;
+        }
+
+        #viewport {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background-image: radial-gradient(rgba(255, 255, 255, 0.2) 1px, transparent 1px);
+            background-position: 0 0;
+            background-size: 20px 20px;
+            cursor: grab;
+        }
+
+        #viewport:active {
+            cursor: grabbing;
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+
+        #create-btn {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 9999;
+            padding: 10px 20px;
+            background-color: #333;
+            color: white;
+            border: 2px outset #444;
+            cursor: pointer;
+            font-family: sans-serif;
+            font-weight: bold;
+            box-shadow: 5px 5px 1px rgba(0, 0, 0, 0.5);
+        }
+
+        #create-btn:active {
+            border-style: inset;
+            transform: translate(2px, 2px);
+            box-shadow: 3px 3px 1px rgba(0, 0, 0, 0.5);
+        }
+
+        .draggable {
+            box-sizing: border-box;
+            padding: 2px;
+            position: absolute;
+            min-width: 320px;
+            min-height: 160px;
+            font-family: sans-serif;
+            background-color: #333;
+            border: outset 3px #444;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            resize: both;
+            overflow: hidden;
+            box-shadow: 10px 10px 1px rgba(0, 0, 0, 0.5);
+            cursor: default;
+        }
+
+        .dragger {
+            margin: 0;
+            padding: 5px;
+            cursor: move;
+            background: linear-gradient(to right, black, darkblue);
+            color: white;
+            user-select: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .edit-icon {
+            cursor: pointer;
+            padding: 0 5px;
+        }
+
+        .edit-icon:hover {
+            color: #00FF00;
+        }
+
+        .content {
+            padding: 10px;
+            flex-grow: 1;
+            overflow: auto;
+            background-color: #444;
+            border: inset 2px #444;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .editor-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            height: 100%;
+            flex-grow: 1;
+        }
+
+        .editor-container input {
+            background: #222;
+            color: white;
+            border: 1px solid #555;
+            padding: 5px;
+            font-family: sans-serif;
+        }
+
+        .ace-editor-wrapper {
+            flex-grow: 1;
+            position: relative;
+            border: 1px solid #555;
+        }
+
+        .editor-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: auto;
+        }
+
+        button {
+            background: #333;
+            color: white;
+            border: 2px outset #555;
+            cursor: pointer;
+            padding: 5px 10px;
+        }
+
+        button:active {
+            border-style: inset;
+        }
+
+        .btn-delete {
+            background-color: #5a1010 !important;
+        }
+
+        p,
+        li,
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {
+            margin: 0;
+            padding: 2px;
+            cursor: text;
+        }
+
+        ol,
+        ul {
+            padding: 0px 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <button id="create-btn">Создать окно</button>
+    <div id="viewport">
+        <div id="canvas"></div>
+    </div>
+
+    <script>
+        const GRID_SIZE = 20;
+        const viewport = document.getElementById('viewport');
+        const canvas = document.getElementById('canvas');
+        const createBtn = document.getElementById('create-btn');
+
+        let domWindows = [];
+        let windowsState = {};
+        let canvasX = 0, canvasY = 0, canvasScale = 1;
+        let saveTimeout;
+        let isPanning = false, startPanX = 0, startPanY = 0;
+        let currentWindow = null, windowOffsetX = 0, windowOffsetY = 0;
+
+        window.activeEditors = {};
+        const roundGrid = value => Math.round(value / GRID_SIZE) * GRID_SIZE;
+
+        function scheduleSave() {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(saveToServer, 500);
+        }
+
+        async function saveToServer() {
+            const state = { camera: { x: canvasX, y: canvasY, scale: canvasScale }, windows: {} };
+
+            domWindows.forEach(win => {
+                const id = win.id;
+                const entry = windowsState[id];
+                state.windows[id] = {
+                    x: parseFloat(win.style.left) || 0,
+                    y: parseFloat(win.style.top) || 0,
+                    width: win.offsetWidth,
+                    height: win.offsetHeight,
+                    zIndex: parseInt(win.style.zIndex) || 0,
+                    title: entry.title,
+                    content: entry.content
+                };
+            });
+
+            await fetch('/api/state', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(state)
+            });
+        }
+
+        function createWindowDOM(id, data) {
+            const win = document.createElement('div');
+            win.className = 'draggable';
+            win.id = id;
+            win.style.left = `${data.x}px`;
+            win.style.top = `${data.y}px`;
+            win.style.width = `${data.width}px`;
+            win.style.height = `${data.height}px`;
+            win.style.zIndex = data.zIndex || 0;
+            win.innerHTML = `
+                <h4 class="dragger">
+                    <span class="title-text"></span>
+                    <i class="bi bi-pencil-square edit-icon" title="Редактировать"></i>
+                </h4>
+                <div class="content"></div>
+            `;
+
+            canvas.appendChild(win);
+            domWindows.push(win);
+            resizeObserver.observe(win);
+
+            win.addEventListener('pointerdown', e => {
+                bringToFront(win);
+                e.stopPropagation();
+            });
+
+            const dragger = win.querySelector('.dragger');
+            dragger.addEventListener('pointerdown', e => {
+                if (e.target.classList.contains('edit-icon')) return;
+                startWindowDrag(e, win);
+            });
+
+            const editIcon = win.querySelector('.edit-icon');
+            editIcon.addEventListener('pointerdown', e => e.stopPropagation());
+            editIcon.addEventListener('click', e => {
+                e.stopPropagation();
+                openEditor(id);
+            });
+
+            renderWindowContent(id);
+        }
+
+        function openEditor(id) {
+            const win = document.getElementById(id);
+            if (!win) return;
+
+            const contentDiv = win.querySelector('.content');
+            const data = windowsState[id];
+            if (window.activeEditors[id]) window.activeEditors[id].destroy();
+
+            contentDiv.innerHTML = `
+                <div class="editor-container">
+                    <input type="text" id="edit-title-${id}" value="${data.title}">
+                    <div class="ace-editor-wrapper">
+                        <div id="ace-editor-${id}" style="position: absolute; top: 0; left: 0; transform-origin: 0 0; width: ${100 * canvasScale}%; height: ${100 * canvasScale}%; transform: scale(${1 / canvasScale});"></div>
+                    </div>
+                    <div class="editor-actions">
+                        <button class="btn-delete" onclick="deleteWindow('${id}')">Удалить</button>
+                        <button onclick="cancelEditor('${id}')">Отменить</button>
+                        <button onclick="saveEditor('${id}')">Подтвердить</button>
+                    </div>
+                </div>
+            `;
+
+            ace.require('ace/ext/language_tools');
+            const editor = ace.edit(`ace-editor-${id}`);
+            editor.setTheme('ace/theme/monokai');
+            editor.session.setMode('ace/mode/html');
+            editor.setOptions({
+                enableBasicAutocompletion: true,
+                enableLiveAutocompletion: true,
+                enableSnippets: true,
+                behavioursEnabled: true,
+                showPrintMargin: false,
+                fontSize: 14 * canvasScale
+            });
+            editor.setValue(data.content, -1);
+            window.activeEditors[id] = editor;
+        }
+
+        function saveEditor(id) {
+            const titleVal = document.getElementById(`edit-title-${id}`).value;
+            const contentVal = window.activeEditors[id].getValue();
+            windowsState[id].title = titleVal;
+            windowsState[id].content = contentVal;
+
+            cleanupEditor(id);
+            renderWindowContent(id);
+            scheduleSave();
+        }
+
+        function cancelEditor(id) {
+            cleanupEditor(id);
+            renderWindowContent(id);
+        }
+
+        function deleteWindow(id) {
+            cleanupEditor(id);
+            const win = document.getElementById(id);
+            if (!win) return;
+
+            resizeObserver.unobserve(win);
+            win.remove();
+            domWindows = domWindows.filter(w => w.id !== id);
+            delete windowsState[id];
+            scheduleSave();
+        }
+
+        function cleanupEditor(id) {
+            if (!window.activeEditors[id]) return;
+            window.activeEditors[id].destroy();
+            delete window.activeEditors[id];
+        }
+
+function renderWindowContent(id) {
+    const win = document.getElementById(id);
+    if (!win) return;
+
+    const data = windowsState[id];
+    win.querySelector('.title-text').textContent = `${data.title}.exe`;
+
+    let htmlContent = data.content.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (match, innerCSS) => `
+        <style>
+            @scope (#${id}) {
+                ${innerCSS}
+            }
+        </style>
+    `);
+
+    const scriptsToRun = [];
+    htmlContent = htmlContent.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (match, innerJS) => {
+        scriptsToRun.push(innerJS);
+        return '';
+    });
+
+    const contentContainer = win.querySelector('.content');
+    contentContainer.innerHTML = htmlContent;
+
+    scriptsToRun.forEach(scriptText => {
+        const scriptEl = document.createElement('script');
+
+        let loopCounter = 0;
+        // Корректный перехват for, while и do-while без поломки скобок
+        const safeScriptText = scriptText.replace(
+            /(for\s*\([\s\S]*?\)\s*\{|while\s*\([\s\S]*?\)\s*\{|do\s*\{)/g,
+            (match) => {
+                loopCounter++;
+                const loopId = loopCounter;
+                // При входе в цикл сбрасываем время старта, внутри проверяем лимит
+                return `__startLoop(${loopId}); ${match} if (__checkLoop(${loopId})) break; `;
+            }
+        );
+
+        scriptEl.textContent = `
+            (function(windowElement, windowId) {
+                const __loopStarts = {};
+
+                function __startLoop(id) {
+                    __loopStarts[id] = performance.now();
+                }
+
+                function __checkLoop(id) {
+                    const start = __loopStarts[id];
+                    if (start && (performance.now() - start > 2000)) {
+                        console.warn('Бесконечный цикл #' + id + ' остановлен в окне ' + windowId);
+                        return true;
+                    }
+                    return false;
+                }
+
+                const currentWindow = new Proxy(windowElement, {
+                    get(target, prop) {
+                        const blockedMethods = ['appendChild', 'prepend', 'insertBefore', 'replaceChild', 'insertAdjacentElement', 'insertAdjacentHTML'];
+                        if (blockedMethods.includes(prop)) {
+                            return () => {
+                                throw new Error('Вставка напрямую в currentWindow запрещена. Добавляйте новые элементы в currentWindow.querySelector(".content") или другие окна.');
+                            };
+                        }
+                        const value = target[prop];
+                        return typeof value === 'function' ? value.bind(target) : value;
+                    },
+                    set(target, prop, value) {
+                        const blockedProps = ['innerHTML', 'outerHTML', 'textContent', 'innerText'];
+                        if (blockedProps.includes(prop)) {
+                            throw new Error('Перезапись содержимого окна запрещена. Изменяйте .content');
+                        }
+                        target[prop] = value;
+                        return true;
+                    }
+                });
+
+                try {
+                    ${safeScriptText}
+                } catch (e) {
+                    console.error('Ошибка в скрипте окна ' + windowId + ':', e);
+                }
+            })(document.getElementById('${id}'), '${id}');
+        `;
+        contentContainer.appendChild(scriptEl);
+    });
+}
+
+        const resizeObserver = new ResizeObserver(entries => {
+            entries.forEach(entry => {
+                const win = entry.target;
+                const width = win.offsetWidth;
+                const height = win.offsetHeight;
+                const snappedWidth = roundGrid(width);
+                const snappedHeight = roundGrid(height);
+
+                if (width !== snappedWidth || height !== snappedHeight) {
+                    win.style.width = `${snappedWidth}px`;
+                    win.style.height = `${snappedHeight}px`;
+                }
+
+                if (window.activeEditors[win.id]) window.activeEditors[win.id].resize();
+            });
+            scheduleSave();
+        });
+
+        function updateCanvas() {
+            canvas.style.transform = `translate(${canvasX}px, ${canvasY}px) scale(${canvasScale})`;
+            canvas.style.zoom = '';
+
+            const bgSize = 20 * canvasScale;
+            viewport.style.backgroundSize = `${bgSize}px ${bgSize}px`;
+            viewport.style.backgroundPosition = `${canvasX}px ${canvasY}px`;
+
+            Object.keys(window.activeEditors).forEach(id => {
+                const editorDiv = document.getElementById(`ace-editor-${id}`);
+                if (!editorDiv) return;
+
+                editorDiv.style.transform = `scale(${1 / canvasScale})`;
+                editorDiv.style.width = `${100 * canvasScale}%`;
+                editorDiv.style.height = `${100 * canvasScale}%`;
+
+                const editor = window.activeEditors[id];
+                editor.setFontSize(14 * canvasScale);
+                editor.resize(true);
+            });
+        }
+
+        function bringToFront(element) {
+            const index = domWindows.indexOf(element);
+            if (index !== -1) {
+                domWindows.splice(index, 1);
+                domWindows.push(element);
+            }
+            domWindows.forEach((win, i) => win.style.zIndex = i);
+            scheduleSave();
+        }
+
+        function startWindowDrag(e, win) {
+            e.stopPropagation();
+            currentWindow = win;
+            bringToFront(currentWindow);
+            e.preventDefault();
+
+            const rect = currentWindow.getBoundingClientRect();
+            windowOffsetX = (e.clientX - rect.left) / canvasScale;
+            windowOffsetY = (e.clientY - rect.top) / canvasScale;
+
+            document.addEventListener('pointermove', processWindowDrag);
+            document.addEventListener('pointerup', stopWindowDrag);
+        }
+
+        function processWindowDrag(e) {
+            if (!currentWindow) return;
+
+            let targetX = (e.clientX - canvasX) / canvasScale - windowOffsetX;
+            let targetY = (e.clientY - canvasY) / canvasScale - windowOffsetY;
+
+            targetX = roundGrid(targetX);
+            targetY = roundGrid(targetY);
+
+            currentWindow.style.left = `${targetX}px`;
+            currentWindow.style.top = `${targetY}px`;
+        }
+
+        function stopWindowDrag() {
+            document.removeEventListener('pointermove', processWindowDrag);
+            document.removeEventListener('pointerup', stopWindowDrag);
+            currentWindow = null;
+            scheduleSave();
+        }
+
+        createBtn.addEventListener('click', () => {
+            const id = 'win_' + Date.now();
+            const startX = (-canvasX + window.innerWidth / 2 - 125) / canvasScale;
+            const startY = (-canvasY + window.innerHeight / 2 - 90) / canvasScale;
+
+            windowsState[id] = {
+                x: roundGrid(startX),
+                y: roundGrid(startY),
+                width: 350,
+                height: 350,
+                zIndex: domWindows.length,
+                title: 'Новое_окно',
+                content: ''
+            };
+
+            createWindowDOM(id, windowsState[id]);
+            openEditor(id);
+        });
+
+        viewport.addEventListener('pointerdown', e => {
+            if (e.target === viewport || e.target === canvas) {
+                isPanning = true;
+                startPanX = e.clientX - canvasX;
+                startPanY = e.clientY - canvasY;
+            }
+        });
+
+        window.addEventListener('pointermove', e => {
+            if (!isPanning) return;
+            canvasX = e.clientX - startPanX;
+            canvasY = e.clientY - startPanY;
+            updateCanvas();
+        });
+
+        window.addEventListener('pointerup', () => {
+            if (isPanning) {
+                isPanning = false;
+                scheduleSave();
+            }
+        });
+
+        viewport.addEventListener('wheel', e => {
+            e.preventDefault();
+            const zoomIntensity = 0.001;
+            const factor = Math.exp(-e.deltaY * zoomIntensity);
+            const mouseX = e.clientX, mouseY = e.clientY;
+            const canvasMouseX = (mouseX - canvasX) / canvasScale;
+            const canvasMouseY = (mouseY - canvasY) / canvasScale;
+
+            canvasScale = Math.max(0.1, Math.min(canvasScale * factor, 5));
+            canvasX = mouseX - canvasMouseX * canvasScale;
+            canvasY = mouseY - canvasMouseY * canvasScale;
+
+            updateCanvas();
+            scheduleSave();
+        }, { passive: false });
+
+        async function initApp() {
+            try {
+                const response = await fetch('/api/state');
+                if (!response.ok) throw new Error('No state found');
+
+                const state = await response.json();
+                canvasX = state.camera.x;
+                canvasY = state.camera.y;
+                canvasScale = state.camera.scale;
+                windowsState = state.windows || {};
+
+                Object.keys(windowsState)
+                    .sort((a, b) => (windowsState[a].zIndex || 0) - (windowsState[b].zIndex || 0))
+                    .forEach(id => createWindowDOM(id, windowsState[id]));
+            } catch (error) {
+                console.log('Starting fresh session.');
+            }
+
+            updateCanvas();
+        }
+
+        window.addEventListener('load', initApp);
+    </script>
+</body>
+
+</html>
