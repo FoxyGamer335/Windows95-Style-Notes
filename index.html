@@ -23,6 +23,7 @@
             padding: 0;
             width: 100%;
             height: 100%;
+            height: 100dvh;
             overflow: hidden;
             background-color: #005b5b;
         }
@@ -30,11 +31,14 @@
         #viewport {
             width: 100%;
             height: 100%;
+            height: 100dvh;
             position: relative;
             background-image: radial-gradient(rgba(255, 255, 255, 0.2) 1px, transparent 1px);
             background-position: 0 0;
             background-size: 20px 20px;
             cursor: grab;
+            touch-action: none;
+            user-select: none;
         }
 
         #viewport:active {
@@ -82,7 +86,7 @@
             box-sizing: border-box;
             padding: 2px;
             position: absolute;
-            min-width: 320px;
+            min-width: min(320px, calc(100vw - 24px));
             min-height: 160px;
             font-family: sans-serif;
             background-color: #333;
@@ -94,6 +98,25 @@
             overflow: hidden;
             box-shadow: 10px 10px 1px rgba(0, 0, 0, 0.5);
             cursor: default;
+            touch-action: none;
+        }
+
+        .resize-handle {
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            width: 34px;
+            height: 34px;
+            z-index: 2;
+            cursor: nwse-resize;
+            touch-action: none;
+        }
+
+        @media (pointer: coarse) {
+            .resize-handle {
+                width: 52px;
+                height: 52px;
+            }
         }
 
         .dragger {
@@ -232,6 +255,54 @@
             color: #ddd;
             margin-bottom: 4px;
         }
+
+        .settings-window {
+            touch-action: auto;
+        }
+
+        @media (max-width: 600px) {
+            #buttons {
+                top: max(10px, env(safe-area-inset-top));
+                left: max(10px, env(safe-area-inset-left));
+                right: max(10px, env(safe-area-inset-right));
+                display: flex;
+                gap: 8px;
+            }
+
+            #buttons button {
+                flex: 1;
+                min-height: 44px;
+                margin-right: 0;
+                padding: 8px 10px;
+                font-size: 14px;
+            }
+
+            .dragger {
+                min-height: 44px;
+                padding: 8px;
+            }
+
+            .edit-icon {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 36px;
+                min-height: 36px;
+            }
+
+            button,
+            .editor-container input {
+                min-height: 44px;
+            }
+
+            .editor-actions {
+                flex-wrap: wrap;
+            }
+
+            .editor-actions button {
+                flex: 1 1 100px;
+            }
+        }
     </style>
 </head>
 
@@ -280,6 +351,14 @@
         let saveTimeout;
         let isPanning = false, startPanX = 0, startPanY = 0;
         let currentWindow = null, windowOffsetX = 0, windowOffsetY = 0;
+        let resizingWindow = null;
+        let resizeStartX = 0, resizeStartY = 0;
+        let resizeStartWidth = 0, resizeStartHeight = 0;
+        const activePointers = new Map();
+        let pinchStartDistance = 0;
+        let pinchStartScale = 1;
+        let pinchCenterX = 0;
+        let pinchCenterY = 0;
 
         window.activeEditors = {};
         const roundGrid = value => Math.round(value / GRID_SIZE) * GRID_SIZE;
@@ -433,6 +512,7 @@
                     <i class="bi bi-pencil-square edit-icon" title="Редактировать"></i>
                 </h4>
                 <div class="content"></div>
+                <div class="resize-handle" aria-label="Изменить размер окна"></div>
             `;
 
             canvas.appendChild(win);
@@ -455,6 +535,11 @@
             editIcon.addEventListener('click', e => {
                 e.stopPropagation();
                 openEditor(id);
+            });
+
+            win.querySelector('.resize-handle').addEventListener('pointerdown', e => {
+                if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+                startWindowResize(e, win);
             });
 
             renderWindowContent(id);
@@ -680,6 +765,7 @@
 
             document.addEventListener('pointermove', processWindowDrag);
             document.addEventListener('pointerup', stopWindowDrag);
+            document.addEventListener('pointercancel', stopWindowDrag);
         }
 
         function processWindowDrag(e) {
@@ -698,7 +784,39 @@
         function stopWindowDrag() {
             document.removeEventListener('pointermove', processWindowDrag);
             document.removeEventListener('pointerup', stopWindowDrag);
+            document.removeEventListener('pointercancel', stopWindowDrag);
             currentWindow = null;
+            scheduleSave();
+        }
+
+        function startWindowResize(e, win) {
+            e.preventDefault();
+            e.stopPropagation();
+            resizingWindow = win;
+            resizeStartX = e.clientX;
+            resizeStartY = e.clientY;
+            resizeStartWidth = win.offsetWidth;
+            resizeStartHeight = win.offsetHeight;
+            bringToFront(win);
+            document.addEventListener('pointermove', processWindowResize);
+            document.addEventListener('pointerup', stopWindowResize);
+            document.addEventListener('pointercancel', stopWindowResize);
+        }
+
+        function processWindowResize(e) {
+            if (!resizingWindow) return;
+
+            const width = resizeStartWidth + (e.clientX - resizeStartX) / canvasScale;
+            const height = resizeStartHeight + (e.clientY - resizeStartY) / canvasScale;
+            resizingWindow.style.width = `${Math.max(160, roundGrid(width))}px`;
+            resizingWindow.style.height = `${Math.max(160, roundGrid(height))}px`;
+        }
+
+        function stopWindowResize() {
+            document.removeEventListener('pointermove', processWindowResize);
+            document.removeEventListener('pointerup', stopWindowResize);
+            document.removeEventListener('pointercancel', stopWindowResize);
+            resizingWindow = null;
             scheduleSave();
         }
 
@@ -722,26 +840,80 @@
         });
 
         viewport.addEventListener('pointerdown', e => {
-            if (e.target === viewport || e.target === canvas) {
+            if (e.target !== viewport && e.target !== canvas) return;
+
+            activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (activePointers.size === 1) {
                 isPanning = true;
                 startPanX = e.clientX - canvasX;
                 startPanY = e.clientY - canvasY;
+            } else if (activePointers.size === 2) {
+                isPanning = false;
+                beginPinch();
             }
         });
 
+        function beginPinch() {
+            const points = [...activePointers.values()];
+            const first = points[0];
+            const second = points[1];
+            pinchStartDistance = Math.hypot(second.x - first.x, second.y - first.y);
+            pinchStartScale = canvasScale;
+            pinchCenterX = (first.x + second.x) / 2;
+            pinchCenterY = (first.y + second.y) / 2;
+        }
+
+        function updatePinch() {
+            if (activePointers.size !== 2 || !pinchStartDistance) return;
+
+            const points = [...activePointers.values()];
+            const first = points[0];
+            const second = points[1];
+            const distance = Math.hypot(second.x - first.x, second.y - first.y);
+            const canvasCenterX = (pinchCenterX - canvasX) / canvasScale;
+            const canvasCenterY = (pinchCenterY - canvasY) / canvasScale;
+            canvasScale = Math.max(0.1, Math.min(pinchStartScale * distance / pinchStartDistance, 5));
+            canvasX = pinchCenterX - canvasCenterX * canvasScale;
+            canvasY = pinchCenterY - canvasCenterY * canvasScale;
+            updateCanvas();
+        }
+
         window.addEventListener('pointermove', e => {
+            if (activePointers.has(e.pointerId)) {
+                activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            }
+            if (activePointers.size === 2) {
+                updatePinch();
+                return;
+            }
             if (!isPanning) return;
             canvasX = e.clientX - startPanX;
             canvasY = e.clientY - startPanY;
             updateCanvas();
         });
 
-        window.addEventListener('pointerup', () => {
-            if (isPanning) {
-                isPanning = false;
+        function finishPointer(e) {
+            activePointers.delete(e.pointerId);
+            if (activePointers.size === 0) {
+                if (isPanning) {
+                    isPanning = false;
+                    scheduleSave();
+                }
+                pinchStartDistance = 0;
+            } else if (activePointers.size === 1) {
+                const point = [...activePointers.values()][0];
+                isPanning = true;
+                startPanX = point.x - canvasX;
+                startPanY = point.y - canvasY;
+                pinchStartDistance = 0;
                 scheduleSave();
             }
+        }
+
+        window.addEventListener('pointerup', e => {
+            finishPointer(e);
         });
+        window.addEventListener('pointercancel', finishPointer);
 
         viewport.addEventListener('wheel', e => {
             e.preventDefault();
