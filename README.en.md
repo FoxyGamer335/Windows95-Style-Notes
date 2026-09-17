@@ -1,6 +1,6 @@
 # Super Notes in Windows 95 Style
 
-[Русская версия](README.ru.md)
+[Русская версия](README.md)
 
 Need notes that support not only plain text, but also markup, logic, and styling?
 No?
