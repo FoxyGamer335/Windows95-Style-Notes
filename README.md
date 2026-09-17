@@ -1,42 +1,42 @@
-# Super Notes in Windows 95 Style
+# Супер-заметки в стиле интерфейса Windows 95
 
-[Русская версия](README.ru.md)
+[English version](README.md)
 
-Need notes that support not only plain text, but also markup, logic, and styling?
-No?
-I'm giving you all that anyway.
-I made this project purely for myself, but maybe someone else will like it too.
+Нужны заметки с поддержкой не только простого текста, но и разметкой, логикой и оформлением?
+Нет?
+А я всё равно дам
+Этот проект я сделал чисто для себя, но может кому-то приглянётся
 
-## Features
+## Возможности
 
-* Move windows across an infinite canvas
-* Resize windows
-* Grid for positioning windows
-* Zoom the workspace in and out
-* Touchscreen support
-* Built-in code editor
-* HTML support in note content
-* Ability to add CSS and JavaScript to individual notes
-* Automatic state saving
-* Data stored locally in the browser
-* Import and export notes as JSON
-* Ability to delete and rename notes
-* Window stacking order changes when interacting with them
+* Перемещение окон по бесконечному холсту
+* Изменение размера окон
+* Сетка для позиционирования окон
+* Приближение и отдаление камеры
+* Поддержка сенсорных экранов
+* Встроенный редактор кода
+* Поддержка HTML в содержимом заметок
+* Возможность добавлять CSS и JavaScript к отдельным заметкам
+* Автоматическое сохранение состояния
+* Хранение данных локально внутри браузера
+* Импорт и экспорт заметок в JSON
+* Возможность удалять и переименовывать заметки
+* Изменение порядка окон при взаимодействии с ними
 
-## Editor
+## Редактор
 
-The content is edited using [Ace Editor](https://ace.c9.io/).
+Для редактирования содержимого используется [Ace Editor](https://ace.c9.io/).
 
-The editor supports HTML syntax highlighting, autocompletion, snippets, and other Ace features.
+Редактор поддерживает подсветку HTML, автодополнение, сниппеты и другие возможности Ace.
 
-A note's content can be plain HTML:
+Содержимое заметки может быть обычным HTML:
 
 ```html
-<h2>Title</h2>
-<p>Note text</p>
+<h2>Заголовок</h2>
+<p>Текст заметки</p>
 ```
 
-You can also use custom styles:
+Можно также использовать собственные стили:
 
 ```html
 <style>
@@ -46,65 +46,65 @@ You can also use custom styles:
 </style>
 ```
 
-and JavaScript:
+и JavaScript:
 
 ```html
 <script>
-    console.log("Hello!");
+    console.log("Привет!");
 </script>
 ```
 
-This means that an individual window can contain not only text, but also interactive elements.
+Таким образом, отдельное окно может содержать не только текст, но и интерактивные элементы.
 
-## Data Saving
+## Сохранение данных
 
-The workspace state is automatically saved in the browser using **IndexedDB**.
+Состояние рабочего пространства автоматически сохраняется в браузере с использованием **IndexedDB**.
 
-The following are saved:
+Сохраняются:
 
-* window positions;
-* sizes;
-* order;
-* note names;
-* content;
-* camera zoom level;
+* положение окон;
+* размеры;
+* порядок;
+* названия заметок;
+* содержимое;
+* положение масштаб камеры;
 
-## Import and Export
+## Импорт и экспорт
 
-The **"Settings"** menu currently provides only:
+В меню **Settings»** пока доступны только:
 
-* **Import JSON**
-* **Export JSON**
+* **Импортировать JSON**
+* **Экспортировать JSON**
 
-This makes it possible, for example, to move a collection of notes between browsers or create backups.
+Это позволяет, например, переносить набор заметок между браузерами или делать резервные копии.
 
-## Controls
+## Управление
 
-### Workspace
+### Рабочее пространство
 
-* **LMB / tap on an empty area** — move the workspace
-* **Drag a window by its title bar** — move the window
-* **Grab the bottom-right corner** — resize the window
-* **Interact with a window** — bring it to the foreground
-* **Two fingers on a touchscreen / mouse wheel** — zoom the workspace
+* **ЛКМ / касание по пустому месту** — перемещение рабочего пространства
+* **Перетаскивание окна за заголовок** — перемещение окна
+* **Хватание за правый нижний край** — изменение размера окна
+* **Взаимодействие с окном** — переносит его на передний план
+* **Два пальца на сенсорном экране / Кручение колеса мыши** — масштабирование рабочего пространства
 
-## Creating a Note
+## Создание заметки
 
-Click the **"Create"** button.
+Нажмите кнопку **Create»**.
 
-A new window will appear in the center of the current camera view and will automatically open in edit mode.
+Новое окно появится в центре текущего камеры и автоматически откроется в режиме редактирования.
 
-In the editor, you can change:
+В редакторе можно изменить:
 
-* window name;
-* content;
+* название окна;
+* содержимое;
 * HTML;
 * CSS;
 * JavaScript.
 
-After confirming, the content is displayed directly inside the window.
+После подтверждения содержимое отображается непосредственно внутри окна.
 
-## Technologies Used
+## Используемые технологии
 
 * HTML
 * CSS
@@ -113,16 +113,16 @@ After confirming, the content is displayed directly inside the window.
 * Ace Editor
 * Bootstrap Icons
 
-## Data
+## Данные
 
-All notes are stored locally in the device's browser.
+Все заметки хранятся локально в браузере устройства.
 
-The project does not require its own database or server-side storage for the workspace.
+Проект не требует собственной базы данных или серверной части для хранения рабочего пространства.
 
-> **Important:** clearing browser site data may result in the loss of locally stored notes. Use JSON export for backups.
+> **Важно:** очистка данных сайта браузером может привести к потере локально сохранённых заметок. Для резервного копирования используйте экспорт JSON.
 
-[Start Taking Notes](https://foxygamer335.github.io/Windows95-Style-Notes/)
+[Начать делать заметки](https://foxygamer335.github.io/Windows95-Style-Notes/)
 
-## License
+## Лицензия
 
 MIT License
