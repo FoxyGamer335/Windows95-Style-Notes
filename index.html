@@ -310,20 +310,19 @@
     <div id="settings-modal" class="modal">
         <div class="draggable settings-window">
             <h4 class="dragger">
-                <span>Настройки.exe</span>
-                <button id="close-settings-btn" class="close-settings-btn" title="Закрыть">&times;</button>
+                <span>Settings.exe</span>
+                <button id="close-settings-btn" class="close-settings-btn" title="Close">&times;</button>
             </h4>
             <div class="content">
-                <p class="settings-description">Состояние заметок хранится локально в IndexedDB.</p>
-                <button id="import-json-btn">Импортировать JSON</button>
-                <button id="export-json-btn">Экспортировать JSON</button>
+                <button id="import-json-btn">Import JSON</button>
+                <button id="export-json-btn">Export JSON</button>
                 <input id="import-json-input" type="file" accept="application/json,.json" hidden>
             </div>
         </div>
     </div>
     <div id="buttons">
-        <button id="create-btn">Создать окно</button>
-        <button id="settings-btn">Настройки</button>
+        <button id="create-btn">Create</button>
+        <button id="settings-btn">Settings</button>
     </div>
     <div id="viewport">
         <div id="canvas"></div>
@@ -430,13 +429,13 @@
             try {
                 await writeState(collectState());
             } catch (error) {
-                console.error('Не удалось сохранить состояние в IndexedDB:', error);
+                console.error('Failed to save state to IndexedDB:', error);
             }
         }
 
         function applyState(state) {
             if (!state || !state.camera || typeof state.windows !== 'object') {
-                throw new Error('Некорректный формат состояния');
+                throw new Error('Invalid state format');
             }
 
             Object.keys(window.activeEditors).forEach(cleanupEditor);
@@ -492,8 +491,8 @@
                 await writeState(collectState());
                 closeSettings();
             } catch (error) {
-                console.error('Не удалось импортировать JSON:', error);
-                alert('Не удалось импортировать JSON: проверьте формат файла.');
+                console.error('Failed to import JSON:', error);
+                alert('Failed to import JSON: please check the file format.');
             }
         });
 
@@ -509,10 +508,10 @@
             win.innerHTML = `
                 <h4 class="dragger">
                     <span class="title-text"></span>
-                    <i class="bi bi-pencil-square edit-icon" title="Редактировать"></i>
+                    <i class="bi bi-pencil-square edit-icon" title="Edit"></i>
                 </h4>
                 <div class="content"></div>
-                <div class="resize-handle" aria-label="Изменить размер окна"></div>
+                <div class="resize-handle" aria-label="Resize window"></div>
             `;
 
             canvas.appendChild(win);
@@ -560,9 +559,9 @@
                         <div id="ace-editor-${id}" style="position: absolute; top: 0; left: 0; transform-origin: 0 0; width: ${100 * canvasScale}%; height: ${100 * canvasScale}%; transform: scale(${1 / canvasScale});"></div>
                     </div>
                     <div class="editor-actions">
-                        <button class="btn-delete" onclick="deleteWindow('${id}')">Удалить</button>
-                        <button onclick="cancelEditor('${id}')">Отменить</button>
-                        <button onclick="saveEditor('${id}')">Подтвердить</button>
+                        <button class="btn-delete" onclick="deleteWindow('${id}')">Delete</button>
+                        <button onclick="cancelEditor('${id}')">Cancel</button>
+                        <button onclick="saveEditor('${id}')">Confirm</button>
                     </div>
                 </div>
             `;
@@ -665,7 +664,7 @@
                 function __checkLoop(id) {
                     const start = __loopStarts[id];
                     if (start && (performance.now() - start > 2000)) {
-                        console.warn('Бесконечный цикл #' + id + ' остановлен в окне ' + windowId);
+                        console.warn('Infinite loop #' + id + ' stopped in window ' + windowId);
                         return true;
                     }
                     return false;
@@ -676,7 +675,7 @@
                         const blockedMethods = ['appendChild', 'prepend', 'insertBefore', 'replaceChild', 'insertAdjacentElement', 'insertAdjacentHTML'];
                         if (blockedMethods.includes(prop)) {
                             return () => {
-                                throw new Error('Вставка напрямую в currentWindow запрещена. Добавляйте новые элементы в currentWindow.querySelector(".content") или другие окна.');
+                                throw new Error('Direct insertion into currentWindow is forbidden. Add new elements to currentWindow.querySelector(".content") or other windows.');
                             };
                         }
                         const value = target[prop];
@@ -685,7 +684,7 @@
                     set(target, prop, value) {
                         const blockedProps = ['innerHTML', 'outerHTML', 'textContent', 'innerText'];
                         if (blockedProps.includes(prop)) {
-                            throw new Error('Перезапись содержимого окна запрещена. Изменяйте .content');
+                            throw new Error('Direct insertion into currentWindow is forbidden. Add new elements to currentWindow.querySelector(".content") or other windows.');
                         }
                         target[prop] = value;
                         return true;
@@ -695,7 +694,7 @@
                 try {
                     ${safeScriptText}
                 } catch (e) {
-                    console.error('Ошибка в скрипте окна ' + windowId + ':', e);
+                    console.error('Error in window script ' + windowId + ':', e);
                 }
             })(document.getElementById('${id}'), '${id}');
         `;
@@ -831,7 +830,7 @@
                 width: 350,
                 height: 350,
                 zIndex: domWindows.length,
-                title: 'Новое_окно',
+                title: 'New_Window',
                 content: ''
             };
 
@@ -936,7 +935,7 @@
                 const state = await readState();
                 if (state) applyState(state);
             } catch (error) {
-                console.error('Не удалось загрузить состояние из IndexedDB:', error);
+                console.error('Failed to load state from IndexedDB:', error);
             }
 
             updateCanvas();
